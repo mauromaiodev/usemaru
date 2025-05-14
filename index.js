@@ -319,8 +319,9 @@ export async function delete${capitalizedResource}(id: string): Promise<void> {
 
   actionsWithApiInstance: (
     resource,
-    capitalizedResource
-  ) => `import api from '@/src/lib/api'
+    capitalizedResource,
+    apiImportPath
+  ) => `import api from '${apiImportPath}'
 import { ${capitalizedResource}, Create${capitalizedResource}Dto, Update${capitalizedResource}Dto } from '../types/${resource}'
 
 export async function fetch${capitalizedResource}List(): Promise<${capitalizedResource}[]> {
@@ -348,6 +349,59 @@ export async function delete${capitalizedResource}(id: string): Promise<void> {
 }`,
 };
 
+const findFiles = (baseDir, pattern) => {
+  const results = [];
+
+  const search = (dir) => {
+    if (!fs.existsSync(dir)) return;
+
+    const files = fs.readdirSync(dir);
+
+    for (const file of files) {
+      const filePath = path.join(dir, file);
+      const stat = fs.statSync(filePath);
+
+      if (stat.isDirectory()) {
+        search(filePath);
+      } else if (pattern.test(file)) {
+        results.push(filePath);
+      }
+    }
+  };
+
+  search(baseDir);
+  return results;
+};
+
+const checkForAxiosInstance = (filePath) => {
+  try {
+    const content = fs.readFileSync(filePath, "utf8");
+    const hasAxiosCreate = content.includes("axios.create(");
+    const hasAxiosExport =
+      content.includes("export default") &&
+      (content.includes("export default api") ||
+        content.includes("export default axios") ||
+        content.includes("export default axiosInstance"));
+
+    return hasAxiosCreate && hasAxiosExport;
+  } catch (error) {
+    return false;
+  }
+};
+
+const findAxiosInstances = (baseDir) => {
+  const jsFiles = findFiles(baseDir, /\.(js|ts)$/);
+  const instances = [];
+
+  for (const file of jsFiles) {
+    if (checkForAxiosInstance(file)) {
+      instances.push(file);
+    }
+  }
+
+  return instances;
+};
+
 const capitalize = (str) => str.charAt(0).toUpperCase() + str.slice(1);
 const uncapitalize = (str) => str.charAt(0).toLowerCase() + str.slice(1);
 const singularize = (str) => (str.endsWith("s") ? str.slice(0, -1) : str);
@@ -355,7 +409,8 @@ const singularize = (str) => (str.endsWith("s") ? str.slice(0, -1) : str);
 const generateResource = (
   resource,
   destDir = "./src",
-  useApiInstance = false
+  useApiInstance = false,
+  apiInstancePath = null
 ) => {
   const singularResource = singularize(resource.toLowerCase());
   const capitalizedResource = capitalize(singularResource);
@@ -373,7 +428,7 @@ const generateResource = (
     path.join(destDir, "app", "api", singularResource, "actions"),
   ];
 
-  if (useApiInstance) {
+  if (useApiInstance && !apiInstancePath) {
     directories.push(path.join(destDir, "lib"));
   }
 
@@ -384,15 +439,26 @@ const generateResource = (
     }
   });
 
-  if (useApiInstance) {
+  if (useApiInstance && !apiInstancePath) {
     const apiConfigPath = path.join(destDir, "lib", "api.ts");
     fs.writeFileSync(apiConfigPath, templates.apiConfig());
     console.log(`Arquivo criado: ${apiConfigPath}`);
+    apiInstancePath = "@/lib/api";
   }
 
-  const actionsTemplate = useApiInstance
-    ? templates.actionsWithApiInstance(singularResource, capitalizedResource)
-    : templates.actionsWithAxios(singularResource, capitalizedResource);
+  let actionsTemplate;
+  if (useApiInstance) {
+    actionsTemplate = templates.actionsWithApiInstance(
+      singularResource,
+      capitalizedResource,
+      apiInstancePath
+    );
+  } else {
+    actionsTemplate = templates.actionsWithAxios(
+      singularResource,
+      capitalizedResource
+    );
+  }
 
   const files = [
     {
@@ -437,18 +503,47 @@ const generateResource = (
   console.log(`\nCRUD para ${capitalizedResource} gerado com sucesso!`);
 
   if (useApiInstance) {
-    console.log(
-      `\nInstância do Axios configurada em ${path.join(
-        destDir,
-        "lib",
-        "api.ts"
-      )}`
-    );
+    if (apiInstancePath === "@/lib/api") {
+      console.log(
+        `\nInstância do Axios configurada em ${path.join(
+          destDir,
+          "lib",
+          "api.ts"
+        )}`
+      );
+    } else {
+      console.log(
+        `\nUsando instância existente do Axios em ${apiInstancePath}`
+      );
+    }
     console.log(`As actions foram configuradas para usar essa instância.`);
   } else {
     console.log(
       `\nAs actions estão usando Axios padrão com headers sendo passados em cada chamada.`
     );
+  }
+};
+
+const filePathToImportPath = (filePath, baseDir) => {
+  const withoutExtension = filePath.replace(/\.(js|ts)$/, "");
+
+  let relativePath = path
+    .normalize(withoutExtension)
+    .replace(path.normalize(baseDir), "")
+    .replace(/\\/g, "/");
+
+  if (!relativePath.startsWith("/")) {
+    relativePath = "/" + relativePath;
+  }
+
+  if (
+    baseDir.endsWith("src") ||
+    baseDir.includes("/src") ||
+    baseDir.includes("\\src")
+  ) {
+    return "@/src" + relativePath;
+  } else {
+    return "@" + relativePath;
   }
 };
 
@@ -470,16 +565,77 @@ const main = async () => {
   );
   const destDir = await askQuestion("Diretório de destino", "./src");
 
-  const useApiInstance = await askQuestion(
-    "Criar instância configurada do Axios? (s/N)",
-    "n"
-  );
+  const axiosInstances = findAxiosInstances(destDir);
+
+  let useApiInstance = "n";
+  let apiInstancePath = null;
+
+  if (axiosInstances.length > 0) {
+    console.log("\nInstâncias do Axios encontradas no projeto:");
+    axiosInstances.forEach((instance, index) => {
+      console.log(`${index + 1}. ${instance}`);
+    });
+
+    const useExistingInstance = await askQuestion(
+      "Deseja usar a instância existente do Axios? (s/N)",
+      "n"
+    );
+
+    if (
+      useExistingInstance.toLowerCase() === "s" ||
+      useExistingInstance.toLowerCase() === "sim"
+    ) {
+      useApiInstance = "s";
+
+      if (axiosInstances.length === 1) {
+        const instancePath = axiosInstances[0];
+        console.log(`\nUsando a única instância encontrada: ${instancePath}`);
+        apiInstancePath = filePathToImportPath(instancePath, destDir);
+
+        const confirmedPath = await askQuestion(
+          `O caminho de importação será "${apiInstancePath}". Está correto? Se não, digite o caminho correto:`,
+          apiInstancePath
+        );
+        apiInstancePath = confirmedPath;
+      } else {
+        const instanceIndex = await askQuestion(
+          "Qual instância deseja usar? (número)",
+          "1"
+        );
+
+        const index = parseInt(instanceIndex) - 1;
+        if (index >= 0 && index < axiosInstances.length) {
+          const instancePath = axiosInstances[index];
+          apiInstancePath = filePathToImportPath(instancePath, destDir);
+
+          const confirmedPath = await askQuestion(
+            `O caminho de importação será "${apiInstancePath}". Está correto? Se não, digite o caminho correto:`,
+            apiInstancePath
+          );
+          apiInstancePath = confirmedPath;
+        } else {
+          console.log("Índice inválido. Criando uma nova instância.");
+          apiInstancePath = null;
+        }
+      }
+    } else {
+      useApiInstance = await askQuestion(
+        "Criar nova instância configurada do Axios? (s/N)",
+        "n"
+      );
+    }
+  } else {
+    useApiInstance = await askQuestion(
+      "Criar instância configurada do Axios? (s/N)",
+      "n"
+    );
+  }
 
   const shouldUseApiInstance =
     useApiInstance.toLowerCase() === "s" ||
     useApiInstance.toLowerCase() === "sim";
 
-  generateResource(resource, destDir, shouldUseApiInstance);
+  generateResource(resource, destDir, shouldUseApiInstance, apiInstancePath);
   rl.close();
 };
 

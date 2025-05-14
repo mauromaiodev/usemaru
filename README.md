@@ -34,7 +34,17 @@ O assistente interativo irá guiar você pelo processo:
 
 1. Digite o nome do recurso (ex: users, products)
 2. Especifique o diretório de destino (padrão: ./src)
-3. Escolha se deseja criar uma instância configurada do Axios
+3. Escolha entre:
+   - Usar uma instância existente do Axios (detectada automaticamente)
+   - Criar uma nova instância configurada do Axios
+   - Usar o Axios padrão sem instância personalizada
+
+## Recursos
+
+- **Detecção automática de instâncias do Axios**: O usemaru escaneia seu projeto e encontra instâncias existentes do Axios
+- **Singularização de nomes**: Converte automaticamente nomes de recursos no plural para o singular
+- **Configuração flexível**: Permite usar instâncias existentes ou criar novas configurações
+- **Templates completos**: Gera todos os arquivos necessários para um CRUD funcional
 
 ## Estrutura gerada
 
@@ -65,6 +75,17 @@ src/
 └── lib/
     └── api.ts                   # Instância do Axios configurada
 ```
+
+## Opções de configuração do Axios
+
+O usemaru oferece três opções para integração com o Axios:
+
+1. **Usar instância existente**: Detecta automaticamente arquivos que configuram o Axios no seu projeto
+2. **Criar nova instância**: Gera um arquivo `api.ts` configurado com:
+   - Interceptadores para autenticação
+   - Configuração de headers padrão
+   - Manipulação de tokens
+3. **Usar Axios padrão**: Gera actions que utilizam o Axios sem uma instância personalizada
 
 ## Dependências
 
