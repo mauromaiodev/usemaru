@@ -1,0 +1,33 @@
+{
+  "name": "usemaru",
+  "version": "1.0.0",
+  "description": "Gerador de CRUD para Next.js com React Query e Axios",
+  "main": "index.js",
+  "bin": {
+    "usemaru": "./index.js"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "nextjs",
+    "crud",
+    "generator",
+    "react-query",
+    "axios",
+    "cli"
+  ],
+  "author": "Mauro Maio",
+  "license": "MIT",
+  "dependencies": {
+    "fs": "0.0.1-security",
+    "path": "^0.12.7"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mauromaiodev/usemaru"
+  },
+  "bugs": {
+    "url": "https://github.com/mauromaiodev/usemaru/issues"
+  }
+}
